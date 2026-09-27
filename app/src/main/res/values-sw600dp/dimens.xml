@@ -1,0 +1,35 @@
+<resources>
+    <!-- Paddings & Margins (tablet ≥600dp) -->
+    <dimen name="edge_padding">12dp</dimen>
+    <dimen name="internal_spacing">12dp</dimen>
+    <dimen name="list_vertical_padding">18dp</dimen>
+    <dimen name="list_row_vertical_padding">8dp</dimen>
+    <dimen name="button_padding_horizontal">26dp</dimen>
+    <dimen name="button_padding_vertical">18dp</dimen>
+    <dimen name="admin_button_padding_horizontal">14dp</dimen>
+    <dimen name="admin_button_padding_vertical">10dp</dimen>
+    <dimen name="dropdown_padding">14dp</dimen>
+
+    <!-- Text Sizes -->
+    <dimen name="header_text_size">34sp</dimen>
+    <dimen name="instruction_title_size">24sp</dimen>
+    <dimen name="instruction_body_size">22sp</dimen>
+    <dimen name="field_text_size">22sp</dimen>
+    <dimen name="list_header_size">22sp</dimen>
+    <dimen name="list_row_size">22sp</dimen>
+    <dimen name="or_text_size">18sp</dimen>
+
+    <!-- Component Sizes -->
+    <dimen name="max_list_width">1200dp</dimen>
+    <dimen name="border_stroke_width">10dp</dimen>
+    <dimen name="corner_radius">10dp</dimen>
+    <dimen name="card_elevation">6dp</dimen>
+    <dimen name="admin_action_button_height">48dp</dimen>
+
+    <!-- Instruction Block -->
+    <dimen name="instruction_block_spacing">10dp</dimen>
+
+    <!-- List Row Spacing & Corners -->
+    <dimen name="list_row_spacing">8dp</dimen>
+    <dimen name="row_corner_radius">8dp</dimen>
+</resources>

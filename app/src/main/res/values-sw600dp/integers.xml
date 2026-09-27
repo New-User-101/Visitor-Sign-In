@@ -1,0 +1,11 @@
+<resources>
+    <!-- Text sizes (sp) for tablets ≥600dp -->
+    <integer name="header_text_size">34</integer>
+    <integer name="instruction_title_size">24</integer>
+    <integer name="instruction_body_size">22</integer>
+    <integer name="field_text_size">22</integer>
+    <integer name="list_header_size">22</integer>
+    <integer name="list_row_size">22</integer>
+    <integer name="or_text_size">20</integer>
+    <integer name="sign_in_button_text_size">28</integer>
+</resources>

@@ -1,0 +1,11 @@
+<resources>
+    <!-- Default text sizes (sp) as integers -->
+    <integer name="header_text_size">28</integer>
+    <integer name="instruction_title_size">20</integer>
+    <integer name="instruction_body_size">18</integer>
+    <integer name="field_text_size">18</integer>
+    <integer name="list_header_size">18</integer>
+    <integer name="list_row_size">18</integer>
+    <integer name="or_text_size">16</integer>
+    <integer name="sign_in_button_text_size">26</integer>
+</resources>

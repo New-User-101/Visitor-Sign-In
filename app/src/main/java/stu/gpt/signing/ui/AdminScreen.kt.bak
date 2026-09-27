@@ -1,0 +1,911 @@
+package stu.gpt.signing.ui
+
+//import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+//import java.io.BufferedReader
+//import java.io.InputStreamReader
+import stu.gpt.signing.data.Repository
+import stu.gpt.signing.data.ThemeOption
+import androidx.core.graphics.toColorInt
+import android.content.pm.ActivityInfo
+import androidx.activity.compose.LocalActivity
+// Removed delete-flow specific imports
+import android.content.Intent
+import android.content.Context
+import androidx.core.net.toUri
+
+// File-private enum to select which CSV is being picked.
+private enum class CsvKind { Names, Lists, Locations, RegularList }
+
+// Raw CSV reader: returns lines as-is (no splitting) so multi-column parsing can be performed by caller.
+private fun readCsvRaw(context: Context, uri: Uri): List<String> {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            java.io.BufferedReader(java.io.InputStreamReader(input)).readLines()
+        } ?: emptyList()
+    } catch (_: Throwable) {
+        emptyList()
+    }
+}
+
+// Helper to show larger font Toast notifications
+@Suppress("DEPRECATION")
+private fun showLargeToast(context: Context, message: String, textSizeSp: Float = 22f) {
+    val tv = android.widget.TextView(context).apply {
+        text = message
+        setTextColor(android.graphics.Color.WHITE)
+        // padding in pixels; simple for MVP
+        setPadding(32, 24, 32, 24)
+        setBackgroundColor("#AA000000".toColorInt())
+        textSize = textSizeSp
+    }
+    Toast(context).apply {
+        duration = Toast.LENGTH_SHORT
+        this.view = tv
+        show()
+    }
+}
+
+@Composable
+fun AdminScreen(
+    onSave: () -> Unit,
+    onExitApp: () -> Unit,
+    onExportHistory: () -> Unit,
+) {
+    val settings = Repository.settings
+    var showPinChange by remember { mutableStateOf(false) }
+    var headerText by remember { mutableStateOf(settings.headerText) }
+    var leftHeading by remember { mutableStateOf(settings.leftHeading) }
+    var rightHeading by remember { mutableStateOf(settings.rightHeading) }
+    var selectedTheme by remember { mutableStateOf(settings.themeOption) }
+    var retentionDaysInput by remember { mutableStateOf(settings.historyRetentionDays.toString()) }
+    val context = LocalContext.current
+    val activity = LocalActivity.current
+    // Unified control shape for a consistent, compact look
+    val controlShape = RoundedCornerShape(12.dp)
+
+    // Which CSV we are picking (upload)
+    var pendingPick by remember { mutableStateOf<CsvKind?>(null) }
+    // Queue for sequential refresh of all databases
+    var refreshQueue by remember { mutableStateOf(listOf<CsvKind>()) }
+    // Remember last-selected document Uris for automatic refresh (initialize from persisted settings)
+    var lastNamesUri by remember { mutableStateOf(settings.namesUriString?.toUri()) }
+    var lastRolesUri by remember { mutableStateOf(settings.rolesUriString?.toUri()) }
+    var lastLocationsUri by remember { mutableStateOf(settings.locationsUriString?.toUri()) }
+    // Locations now come from the combined "Lists" upload; we track only the single Lists file via lastRolesUri
+    var lastStageUri by remember { mutableStateOf(settings.regularListUriString?.toUri()) }
+
+    var membersLabel by remember { mutableStateOf("Members") }
+    var listsLabel by remember { mutableStateOf("Roles") }
+    var locationsLabel by remember { mutableStateOf("Locations") }
+    var castLabel by remember { mutableStateOf("RH Side") }
+    // Removed header file upload; title is now edited directly in the UI
+    // Post-delete Continue dialog state (must be declared before any usage)
+    //var showPostDeleteContinue by remember { mutableStateOf(false)            // Dynamically compute whether CSVs have been uploaded from repository state
+            val namesUploaded by remember { derivedStateOf { Repository.names.isNotEmpty() } }
+    val stageUploaded by remember { derivedStateOf { Repository.stageMembers.isNotEmpty() } }
+
+            // If Cast database is empty, ensure button label shows default "RH Side"
+            LaunchedEffect(stageUploaded) {
+                if (!stageUploaded) castLabel = "RH Side"
+            }
+
+    // Validation for retention days
+    val retentionValue = retentionDaysInput.toLongOrNull()
+    val isRetentionValid = retentionValue != null && retentionValue in 1..3650
+    val retentionErrorText: String? = when {
+        retentionDaysInput.isBlank() -> null // handled by disabled state; no error text
+        retentionValue == null -> "Enter a valid number"
+        retentionValue <= 0 -> "Must be at least 1 day"
+        retentionValue > 3650 -> "Maximum allowed is 3650 days"
+        else -> null
+    }
+
+    // Daily job time (24h) inputs HH and MM
+    var jobHourInput by remember { mutableStateOf(Repository.settings.dailyJobHour.toString().padStart(2, '0')) }
+    var jobMinuteInput by remember { mutableStateOf(Repository.settings.dailyJobMinute.toString().padStart(2, '0')) }
+
+    // SAF picker for CSV/text files
+    // (Removed unused helpers displayNameFor() and shortLabelFromUri())
+
+    val csvPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            if (uri != null) {
+                // Use raw lines for Lists and RegularList; Names can use the simple first-column reader
+                val isRaw = pendingPick == CsvKind.Lists || pendingPick == CsvKind.RegularList
+                val lines = if (isRaw) readCsvRaw(context, uri) else readCsvSimple(context, uri)
+                if (lines.isNotEmpty()) {
+                    when (pendingPick) {
+                        CsvKind.Names -> {
+                            Repository.loadNames(lines)
+                            lastNamesUri = uri
+                            Repository.updateSettings { it.copy(namesUriString = uri.toString()) }
+                        }
+                        CsvKind.Lists -> {
+                            // Roles file: column 1, rows 2+
+                            val roles = mutableListOf<String>()
+                            val splitter = Regex(
+                                """,(?=(?:[^"]*"[^"]*")*[^"]*$)"""
+                            )
+                            lines.drop(1).forEach { row ->
+                                val first = splitter.split(row, 2).firstOrNull()?.trim()?.trim('"') ?: ""
+                                if (first.isNotEmpty()) roles.add(first)
+                            }
+                            Repository.loadRoles(roles)
+                            lastRolesUri = uri
+                            Repository.updateSettings { it.copy(rolesUriString = uri.toString()) }
+                        }
+                        CsvKind.Locations -> {
+                            // Locations file: column 1, rows 2+
+                            val locs = mutableListOf<String>()
+                            val splitter = Regex(
+                                """,(?=(?:[^"]*"[^"]*")*[^"]*$)"""
+                            )
+                            lines.drop(1).forEach { row ->
+                                val first = splitter.split(row, 2).firstOrNull()?.trim()?.trim('"') ?: ""
+                                if (first.isNotEmpty()) locs.add(first)
+                            }
+                            Repository.loadLocations(locs)
+                            lastLocationsUri = uri
+                            Repository.updateSettings { it.copy(locationsUriString = uri.toString()) }
+                        }
+                        CsvKind.RegularList -> {
+                            // Extract play title strictly from column 1, row 1 (CSV-aware split), but do NOT
+                            // overwrite the user-defined Default Title field. The title is user-controlled.
+                            val header = run {
+                                val firstLine = lines.firstOrNull()
+                                if (firstLine.isNullOrEmpty()) "" else {
+                                    val splitter = Regex(
+                                        
+                                        
+                                        """,(?=(?:[^"]*"[^"]*")*[^"]*$)"""
+                                    )
+                                    splitter.split(firstLine).firstOrNull()?.trim()?.trim('"')?.take(30) ?: ""
+                                }
+                            }
+                            // Update runtime play title immediately so both Admin and Main screens reflect it
+                            Repository.playTitle = header
+                            Repository.updateSettings { it.copy(lastRegularListHeader = header) }
+                            // Keep headerText unchanged to remain user-defined.
+                            val members = if (lines.size > 1) lines.drop(1) else emptyList()
+                            Repository.loadRegularListMembers(members)
+                            lastStageUri = uri
+                            Repository.updateSettings { it.copy(regularListUriString = uri.toString()) }
+                        }
+                        null -> {}
+                    }
+
+                    // Try to persist read permission so we can reuse without prompting
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Throwable) { /* ignore */ }
+                    val label = when (pendingPick) {
+                        CsvKind.Names -> membersLabel
+                        CsvKind.Lists -> listsLabel
+                        CsvKind.Locations -> locationsLabel
+                        CsvKind.RegularList -> castLabel
+                        null -> "CSV"
+                    }
+                    showLargeToast(
+                        context,
+                        "$label list updated (${lines.size} items)"
+                    )
+                }
+            }
+            // Mark current pick complete; next launch handled by LaunchedEffect
+            pendingPick = null
+        }
+    )
+
+    // Helper to choose MIME types based on which file is being picked
+    fun mimeTypesFor(@Suppress("UNUSED_PARAMETER") kind: CsvKind?): Array<String> = arrayOf(
+        // Restrict to CSV-like only for list uploads
+        "text/csv",
+        "application/csv",
+        "text/comma-separated-values"
+    )
+
+    // Drive sequential refresh without self-referencing the launcher in its initializer
+    LaunchedEffect(refreshQueue, pendingPick) {
+        if (pendingPick == null && refreshQueue.isNotEmpty()) {
+            val next = refreshQueue.first()
+            refreshQueue = refreshQueue.drop(1)
+            pendingPick = next
+            csvPicker.launch(mimeTypesFor(next))
+        }
+    }
+
+    // SAF CreateDocument for exporting history CSV
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+        onResult = { uri: Uri? ->
+            if (uri != null) {
+                try {
+                    val csv = Repository.buildHistoryCsv(days = settings.historyRetentionDays)
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(csv.toByteArray())
+                        out.flush()
+                    }
+                } catch (_: Throwable) {
+                    // ignore for MVP
+                }
+            }
+            onExportHistory()
+        }
+    )
+
+    Surface(modifier = Modifier.fillMaxSize(), color = settings.primaryBgColor)
+    {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+            // Use Default Title only if Cast database (Regular List) is empty
+            val effectiveTitle = if (Repository.stageMembers.isNotEmpty()) Repository.playTitle else headerText
+            val adminTitle = if (effectiveTitle.isNotBlank()) "Admin Area – $effectiveTitle" else "Admin Area"
+            Text(adminTitle, fontSize = 28.sp, fontWeight = FontWeight.Bold,textAlign = TextAlign.Center,modifier = Modifier.fillMaxWidth())
+
+            Spacer(Modifier.height(10.dp))
+
+            // Simple two-column rows
+            AdminRow(label = "Change PIN", labelWeight = 0.7f, contentWeight = 0.3f) {
+                Button(
+                    onClick = { showPinChange = true },
+                    shape = controlShape,
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
+                ) { Text("Change PIN", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            }
+
+            val helperColor = if (retentionErrorText != null) Color(0xFFFF3B30) else Color(0xFF555555)
+            AdminRow(label = "Keep Sign-Out Records for this many days (1-3650)", labelColor = helperColor, labelWeight = 0.7f, contentWeight = 0.3f) {
+                TextField(
+                    value = retentionDaysInput,
+                    onValueChange = { input ->
+                        val digitsOnly = input.filter { it.isDigit() }.take(4)
+                        retentionDaysInput = digitsOnly
+                    },
+                    placeholder = { Text("Days", fontSize = 12.sp) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        disabledContainerColor = Color.White,
+                        errorContainerColor = Color.White,
+                        focusedTextColor = Color(0xFF000000),
+                        unfocusedTextColor = Color(0xFF000000),
+                        disabledTextColor = Color(0xFF000000),
+                        errorTextColor = Color(0xFF000000),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                        errorIndicatorColor = Color.Transparent,
+                    ),
+                    shape = controlShape,
+                    modifier = Modifier
+                        .width(110.dp)
+                        .height(48.dp)
+                        .onFocusChanged { fs ->
+                            if (!fs.isFocused) {
+                                val v = retentionDaysInput.toLongOrNull()
+                                if (v != null) {
+                                    val coerced = v.coerceIn(1, 3650)
+                                    if (coerced.toString() != retentionDaysInput) retentionDaysInput = coerced.toString()
+                                    Repository.updateSettings { it.copy(historyRetentionDays = coerced) }
+                                    Repository.applyRetentionNow()
+                                    showLargeToast(context, "History pruned to $coerced days.")
+                                }
+                            }
+                        }
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+            // Column Headings (Default Title first)
+            AdminRow(label = "Default Title", labelWeight = 0.3f, contentWeight = 0.7f) {
+                TextField(
+                    value = headerText,
+                    onValueChange = { input -> headerText = input.take(35) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedTextColor = Color(0xFF000000),
+                        unfocusedTextColor = Color(0xFF000000),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    shape = controlShape,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                )
+            }
+            AdminRow(label = "Left-Hand Heading (max 30)", labelWeight = 0.3f, contentWeight = 0.7f) {
+                TextField(
+                    value = leftHeading,
+                    onValueChange = { input -> leftHeading = input.take(30) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedTextColor = Color(0xFF000000),
+                        unfocusedTextColor = Color(0xFF000000),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    shape = controlShape,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                )
+            }
+            // (Default Title moved above)
+            AdminRow(label = "Right-Hand Heading (max 15)", labelWeight = 0.3f, contentWeight = 0.7f) {
+                TextField(
+                    value = rightHeading,
+                    onValueChange = { input -> rightHeading = input.take(15) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedTextColor = Color(0xFF000000),
+                        unfocusedTextColor = Color(0xFF000000),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    shape = controlShape,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            AdminRow(label = "Background Options", labelWeight = 0.3f, contentWeight = 0.7f, contentAlignment = Alignment.CenterStart) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ThemeOptionChip(label = "", color = Color(0xff00b0f0), selected = selectedTheme == ThemeOption.OPTION1, modifier = Modifier.weight(1f)) { selectedTheme = ThemeOption.OPTION1 }
+                    ThemeOptionChip(label = "", color = Color(0xffc6e0b4), selected = selectedTheme == ThemeOption.OPTION2, modifier = Modifier.weight(1f)) { selectedTheme = ThemeOption.OPTION2 }
+                    ThemeOptionChip(label = "", color = Color(0xfffdd76b), selected = selectedTheme == ThemeOption.OPTION3, modifier = Modifier.weight(1f)) { selectedTheme = ThemeOption.OPTION3 }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            AdminRow(label = "Flip screen (180) - Only change if required", labelWeight = 0.7f, contentWeight = 0.3f) {
+                Switch(
+                    checked = Repository.settings.isScreenFlipped,
+                    onCheckedChange = { newFlipped ->
+                        Repository.updateSettings { it.copy(isScreenFlipped = newFlipped) }
+                        activity?.requestedOrientation = if (newFlipped) ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            // Removed explicit "Daily Maintenance" label per request
+            AdminRow(label = "Enable auto Sign-out and refresh", labelWeight = 0.7f, contentWeight = 0.3f) {
+                Switch(
+                    checked = Repository.settings.dailyJobEnabled,
+                    onCheckedChange = { enabled ->
+                        Repository.updateSettings { it.copy(dailyJobEnabled = enabled) }
+                        if (enabled) Repository.rescheduleDailyMaintenance() else Repository.cancelDailyMaintenance()
+                        val msg = if (enabled) "Daily job enabled. Next run: ${Repository.nextDailyRunTimeString()}" else "Daily job disabled"
+                        showLargeToast(context, msg, textSizeSp = 18f)
+                    }
+                )
+            }
+            AdminRow(label = "Auto Refresh Time ( 24 Hour Clock Only)", labelWeight = 0.7f, contentWeight = 0.3f) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextField(
+                        value = jobHourInput,
+                        onValueChange = { input -> jobHourInput = input.filter { it.isDigit() }.take(2) },
+                        placeholder = { Text("HH") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedTextColor = Color(0xFF000000),
+                            unfocusedTextColor = Color(0xFF000000),
+                            cursorColor = Color(0xFF000000),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        shape = controlShape,
+                        modifier = Modifier.width(70.dp).height(48.dp).onFocusChanged { fs ->
+                            if (!fs.isFocused) {
+                                val hour = jobHourInput.toIntOrNull()?.coerceIn(0, 23) ?: Repository.settings.dailyJobHour
+                                val padded = hour.toString().padStart(2, '0')
+                                if (padded != jobHourInput) jobHourInput = padded
+                                Repository.updateSettings { it.copy(dailyJobHour = hour) }
+                                if (Repository.settings.dailyJobEnabled) {
+                                    Repository.rescheduleDailyMaintenance()
+                                    showLargeToast(context, "Next run: ${Repository.nextDailyRunTimeString()}", 18f)
+                                }
+                            }
+                        }
+                    )
+                    Text(":", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp))
+                    TextField(
+                        value = jobMinuteInput,
+                        onValueChange = { input -> jobMinuteInput = input.filter { it.isDigit() }.take(2) },
+                        placeholder = { Text("MM") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedTextColor = Color(0xFF000000),
+                            unfocusedTextColor = Color(0xFF000000),
+                            cursorColor = Color(0xFF000000),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        shape = controlShape,
+                        modifier = Modifier.width(70.dp).height(48.dp).onFocusChanged { fs ->
+                            if (!fs.isFocused) {
+                                val minute = jobMinuteInput.toIntOrNull()?.coerceIn(0, 59) ?: Repository.settings.dailyJobMinute
+                                val padded = minute.toString().padStart(2, '0')
+                                if (padded != jobMinuteInput) jobMinuteInput = padded
+                                Repository.updateSettings { it.copy(dailyJobMinute = minute) }
+                                if (Repository.settings.dailyJobEnabled) {
+                                    Repository.rescheduleDailyMaintenance()
+                                    showLargeToast(context, "Next run: ${Repository.nextDailyRunTimeString()}", 18f)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            //Text(
+               // text = "Next run: ${Repository.nextDailyRunTimeString()}",
+               // fontSize = 16.sp,
+               // color = Color(0xFF333333)
+           // )
+
+            Spacer(Modifier.height(12.dp))
+            AdminRow(label = "Data Management", labelWeight = 0.3f, contentWeight = 0.7f) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        CsvButton("Names", modifier = Modifier.weight(1f), backgroundColor = if (namesUploaded) Color(0xFF48FE9F) else Color(0xFFD9D9D9)) {
+                            pendingPick = CsvKind.Names
+                            csvPicker.launch(mimeTypesFor(pendingPick))
+                        }
+                        CsvButton("Role", modifier = Modifier.weight(1f), backgroundColor = if (Repository.roles.isNotEmpty()) Color(0xFF48FE9F) else Color(0xFFD9D9D9)) {
+                            pendingPick = CsvKind.Lists
+                            csvPicker.launch(mimeTypesFor(pendingPick))
+                        }
+                        CsvButton("Work-Area", modifier = Modifier.weight(1f), backgroundColor = if (Repository.locations.isNotEmpty()) Color(0xFF48FE9F) else Color(0xFFD9D9D9)) {
+                            pendingPick = CsvKind.Locations
+                            csvPicker.launch(mimeTypesFor(pendingPick))
+                        }
+                        CsvButton("Cast-List", modifier = Modifier.weight(1f), backgroundColor = if (stageUploaded) Color(0xFF48FE9F) else Color(0xFFD9D9D9)) {
+                            pendingPick = CsvKind.RegularList
+                            csvPicker.launch(mimeTypesFor(pendingPick))
+                        }
+                        // Refresh All at end of upload buttons
+                        CsvButton("Refresh All", modifier = Modifier.weight(1f), backgroundColor = Color(0xFFB3E5FC)) {
+                            // Reload from existing persisted URIs only
+                            Repository.refreshAllFromPersistedUris()
+                            Repository.applyRetentionNow()
+                            showLargeToast(context, "All databases reloaded.")
+                            return@CsvButton
+                            // Do NOT sign-out on manual refresh; keep current active states
+                            Repository.refreshAllFromPersistedUris()
+                            Repository.applyRetentionNow()
+                            val haveAll = lastNamesUri != null && lastRolesUri != null && lastLocationsUri != null && lastStageUri != null
+                            if (haveAll) {
+                                fun read(uri: Uri?): List<String> = if (uri != null) readCsvSimple(context, uri) else emptyList()
+                                val names = read(lastNamesUri)
+                                if (names.isNotEmpty()) Repository.loadNames(names)
+                                // Read raw Roles (column 1)
+                                val rolesRaw = lastRolesUri?.let { readCsvRaw(context, it) } ?: emptyList()
+                                if (rolesRaw.isNotEmpty()) {
+                                    val splitter = Regex(""",(?=(?:[^"]*"[^"]*")*[^"]*$)""")
+                                    val roles = rolesRaw.drop(1).mapNotNull { row ->
+                                        splitter.split(row, 2).firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }
+                                    }
+                                    Repository.loadRoles(roles)
+                                }
+                                // Read raw Locations (column 1)
+                                val locsRaw = lastLocationsUri?.let { readCsvRaw(context, it) } ?: emptyList()
+                                if (locsRaw.isNotEmpty()) {
+                                    val splitter = Regex(""",(?=(?:[^"]*"[^"]*")*[^"]*$)""")
+                                    val locs = locsRaw.drop(1).mapNotNull { row ->
+                                        splitter.split(row, 2).firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }
+                                    }
+                                    Repository.loadLocations(locs)
+                                }
+                                // Read raw for RegularList (Cast)
+                                val stage = lastStageUri?.let { readCsvRaw(context, it) } ?: emptyList()
+                                if (stage.isNotEmpty()) {
+                                    // Do not overwrite user-defined Default Title from CSV; only reload members
+                                    // Members are in column 1 of rows 2+ (CSV-aware)
+                                    val splitter = Regex(
+                                        """,(?=(?:[^"]*"[^"]*")*[^"]*$)"""
+                                    )
+                                    // Update runtime play title from first row, first column
+                                    Repository.playTitle = splitter.split(stage.first()).firstOrNull()?.trim()?.trim('"')?.take(30) ?: ""
+                                    val members = if (stage.size > 1) stage.drop(1).mapNotNull { row ->
+                                        splitter.split(row).firstOrNull()?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }
+                                    } else emptyList()
+                                    Repository.loadRegularListMembers(members)
+                                }
+                                showLargeToast(context, "All databases reloaded.")
+                            } else {
+                                val queue = listOf(CsvKind.Names, CsvKind.Lists, CsvKind.Locations, CsvKind.RegularList)
+                                refreshQueue = queue.drop(1)
+                                pendingPick = queue.first()
+                                csvPicker.launch(arrayOf("text/csv", "application/csv", "text/comma-separated-values"))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Box(
+                    modifier = Modifier // SAVE BUTTON
+                        .weight(1f)
+                        .background(if (isRetentionValid) Color(0xFF12FA28) else Color(0xFFBDBDBD), controlShape)
+                        .clickable(enabled = isRetentionValid) {
+                            val days = retentionDaysInput.toLongOrNull()?.coerceIn(1, 3650) ?: 90
+                            Repository.updateSettings {
+                                it.copy(
+                                    headerText = headerText.take(35),
+                                    leftHeading = leftHeading.take(30),
+                                    rightHeading = rightHeading.take(15),
+                                    themeOption = selectedTheme,
+                                    historyRetentionDays = days
+                                )
+                            }
+                            // Immediately enforce and persist retention after saving settings
+                            Repository.applyRetentionNow()
+                            // Refresh all databases from persisted URIs so UI reflects latest data and Play Title
+                            Repository.refreshAllFromPersistedUris()
+                            showLargeToast(context, "Settings saved. History pruned to $days days.")
+                            onSave()
+                        }
+                        .padding(vertical = 10.dp), // ~20% smaller height
+                    contentAlignment = Alignment.Center
+                ) { Text("Save",fontSize = 20.sp, color = Color(0xFF000000), fontWeight = FontWeight.Bold) }
+
+                Box(
+                    modifier = Modifier // EXIT APP BUTTON
+                        .weight(1f)
+                        .background(Color(0xffff6347), controlShape) // Light red color
+                        .clickable { onExitApp() }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("Exit App",fontSize = 20.sp, color = Color(0xff000000), fontWeight = FontWeight.Bold) }
+
+                Box(
+                    modifier = Modifier // EXPORT HISTORY BUTTON
+                        .weight(1f)
+                        .background(Color(0xffffcc00), controlShape)
+                        .clickable {
+                            // Launch CreateDocument to let admin choose download location
+                            val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                            createCsvLauncher.launch("${dateStr}_History.csv")
+                        }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("Export History", fontSize = 20.sp, color = Color(0xFF000000), fontWeight = FontWeight.Bold) }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Administration Notes section
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5), RoundedCornerShape(12.dp))
+                    .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+            ) {
+                // Accessible sizing for easier readability (larger text and spacing)
+                val noteFontSize = 18.sp
+                val noteLineHeight = 26.sp
+                val bulletSize = 24.sp
+                Text(
+                    text = "Administration Notes",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF333333),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                val notes = listOf(
+                    "'Cast (RH Side)', 'Members', 'Roles' & 'Locations' uploaded files MUST be in .csv format.",
+                    "The exported history file will be prefixed with the date of export after selecting Save.",
+                    "If the option \"Keep Sign-Out Records…..\" is set to 1, the database will be deleted.",
+                    "Typing ###### into the Name input box will remove the 'RH Side' database and restore the Default Title."
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    notes.forEach { line ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text("\u2022", fontSize = bulletSize, color = Color(0xFF222222))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = line,
+                                style = androidx.compose.ui.text.TextStyle(fontSize = noteFontSize, lineHeight = noteLineHeight),
+                                color = Color(0xFF222222),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Admin Help button (large, accessible)
+            var showAdminHelp by remember { mutableStateOf(false) }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                Button(
+                    onClick = { showAdminHelp = true },
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) { Text("Help", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+            }
+            if (showAdminHelp) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showAdminHelp = false },
+                    confirmButton = {
+                        Button(onClick = { showAdminHelp = false }) { Text("Back", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                    },
+                    title = { Text("Help – Admin", fontSize = 22.sp, fontWeight = FontWeight.Bold) },
+                    text = {
+                        val hSize = 20.sp
+                        val body = 18.sp
+                        val line = 26.sp
+                        val bullet = 24.sp
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 460.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Admin Screen", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            // Headings
+                            Text("Headings", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Default Title (max 35 chars).", body, line, bullet)
+                                Bullet("Left-Hand Heading (max 30 chars).", body, line, bullet)
+                                Bullet("Right-Hand Heading (max 15 chars).", body, line, bullet)
+                            }
+                            // Background Options
+                            Text("Background Options", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Bullet("Choose a color chip (dark border for visibility).", body, line, bullet)
+                            // Auto Sign-out & Refresh
+                            Text("Auto Sign-out & Refresh", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Enable/disable the daily maintenance job.", body, line, bullet)
+                                Bullet("Set 24-hour time for daily refresh.", body, line, bullet)
+                                Bullet("Job signs out all visitors and RH Side, reloads CSVs, applies retention.", body, line, bullet)
+                            }
+                            // Data Management
+                            Text("Data Management", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Members: CSV column 1, header optional.", body, line, bullet)
+                                Bullet("Roles: CSV column 1, row 2 down.", body, line, bullet)
+                                Bullet("Locations: CSV column 1, row 2 down.", body, line, bullet)
+                                Bullet("RH Side (Cast): Row 1 Col 1 = Play Title; Rows 2+ Col 1 = member names.", body, line, bullet)
+                                Bullet("Refresh All: reloads if known; otherwise prompts in order: Members → Roles → Locations → RH Side.", body, line, bullet)
+                            }
+                            // Persistence & Startup
+                            Text("Persistence & Startup", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Remembers last-picked files and reloads them automatically on startup.", body, line, bullet)
+                            }
+                            // Retention
+                            Text("Retention", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Set 'Keep Sign-Out Records' days; older entries are pruned on Save and daily job.", body, line, bullet)
+                            }
+                            // Export History
+                            Text("Export History", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Exports CSV; filename prefixed with date (e.g., 2025-10-06_History.csv).", body, line, bullet)
+                            }
+                            // Administration Notes
+                            Text("Administration Notes", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("CSV is required for Members, Roles, Locations, and RH Side.", body, line, bullet)
+                                Bullet("If 'Keep Sign-Out Records' is 1, database is cleared during maintenance.", body, line, bullet)
+                                Bullet("Typing ###### on Main screen clears RH Side and restores Default Title.", body, line, bullet)
+                            }
+                            // CSV Formats
+                            Text("CSV Formats", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Bullet("Members.csv: Col 1 = Member names.", body, line, bullet)
+                                Bullet("Roles.csv: Col 1 = Roles (row 2+).", body, line, bullet)
+                                Bullet("Locations.csv: Col 1 = Locations (row 2+).", body, line, bullet)
+                                Bullet("RH_Side.csv: Row1 Col1 = Play Title; Rows2+ Col1 = Members.", body, line, bullet)
+                            }
+                            // Sign-out instructions
+                            Text("Sign-out", fontSize = hSize, fontWeight = FontWeight.Bold)
+                            Bullet("To Sign-out: find and tap your name, then tap Yes to confirm sign-out.", body, line, bullet)
+                        }
+                    }
+                )
+            }
+        }
+    }
+// was if (showPin.value)
+    if (showPinChange) {
+        Box(modifier = Modifier
+            .fillMaxWidth(0.4f) // 40% of the parent's width
+            .fillMaxHeight(0.5f) // 50% of the parent's height
+        ) {
+
+        //Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            PinPadDialog(
+                title = "Enter New PIN",
+                onSubmit = { pin ->
+                    Repository.updateSettings { it.copy(pin = pin) }
+                    showPinChange = false
+                },
+                onCancel = { showPinChange = false },
+                enterLabel = "Enter",
+                cancelLabel = "Cancel"
+            )
+        }
+    }
+
+    // Delete confirmation dialog removed
+}
+
+@Composable
+private fun ThemeOptionChip(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val displayColor = if (selected) color else color.copy(alpha = 0.7f)
+    Box(
+        modifier = modifier
+            .border(2.dp, Color(0xFF222222), RoundedCornerShape(16.dp))
+            .background(displayColor, RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, color = Color(0xFF000000), fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun Bullet(
+    text: String,
+    bodySize: androidx.compose.ui.unit.TextUnit,
+    lineHeight: androidx.compose.ui.unit.TextUnit,
+    bulletSize: androidx.compose.ui.unit.TextUnit,
+    color: Color = Color(0xFF222222),
+) {
+    Row(verticalAlignment = Alignment.Top) {
+        Text("\u2022", fontSize = bulletSize, color = color)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = androidx.compose.ui.text.TextStyle(fontSize = bodySize, lineHeight = lineHeight),
+            color = color,
+        )
+    }
+}
+
+// Very simple CSV reader: reads first column per line, trims, ignores blanks.
+private fun readCsvSimple(context: Context, uri: Uri): List<String> {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            java.io.BufferedReader(java.io.InputStreamReader(input)).readLines()
+                .map { line ->
+                    val first = line.split(',').firstOrNull()?.trim() ?: ""
+                    first
+                }
+                .filter { it.isNotBlank() }
+        } ?: emptyList()
+    } catch (_: Throwable) {
+        emptyList()
+    }
+}
+
+@Composable
+private fun CsvButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = Color(0xFF95F852),
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .background(backgroundColor, RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label,fontSize = 18.sp, color = Color(0xFF000000), fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun AdminRow(
+    label: String,
+    labelColor: Color = Color(0xFF333333),
+    modifier: Modifier = Modifier,
+    labelWeight: Float = 0.35f,
+    contentWeight: Float = 0.65f,
+    contentAlignment: Alignment = Alignment.CenterEnd,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(labelWeight)
+        )
+        Box(modifier = Modifier.weight(contentWeight), contentAlignment = contentAlignment) {
+            content()
+        }
+    }
+}
