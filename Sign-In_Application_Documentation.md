@@ -6,18 +6,19 @@
 3. Installation and Setup
 4. User Interface Overview
 5. Core Functionality & Safeguards
-6. Administrative Features & Themes
+6. Administrative Features & Customization
 7. Visual Color Coding & High-Contrast Text
 8. Data Management & File Layouts (Cast, Roles, Locations, Warehouse)
 9. Special Input Codes
-10. Troubleshooting
-11. Technical Specifications
+10. Log Retention & Maintenance
+11. Troubleshooting
+12. Technical Specifications
 
 ---
 
 ## 1. Overview
 
-Sign-In v4.0 is a robust digital attendance system designed for professional environments like theatre companies and offices. It features real-time tracking, full offline persistence, automated data management via synced Excel files, dynamic theme modes, and robust sign-in safeguards.
+Sign-In v4.0 is a robust digital attendance system designed for professional environments like theatre companies and offices. It features real-time tracking, full offline persistence, automated data management via synced Excel files, custom theme color engine, and robust sign-in safeguards.
 
 ---
 
@@ -65,16 +66,10 @@ Sign-In v4.0 is a robust digital attendance system designed for professional env
 
 ---
 
-## 6. Administrative Features & Themes
+## 6. Administrative Features & Customization
 
-### 6.1 Theme Modes (Left to Right)
-1. **Theatre** (`#2BBCF2`)
-2. **Rehearsals** (`#75FDB4`)
-3. **Youth** (`#85EFC8`)
-4. **Dark** (`#71A0F1` / Auto-applied in No-Cast / Dark mode)
-
-### 6.2 Color Selection Engine
-- Tapping any theme swatch opens the built-in **RGB Color Sliders** engine.
+### 6.1 Theme Color Customization
+- Go to **Admin > Appearance**, tap **Click to change** on the right of the tile, and use the built-in **RGB Color Sliders** engine to choose any custom theme color.
 - **Automatic High-Contrast Text**: Text elements (headers, titles, instructions) automatically switch to crisp white on dark backgrounds and black on light backgrounds based on perceptual luminance.
 
 ---
@@ -120,7 +115,18 @@ Entered into the **Name** input box:
 
 ---
 
-## 10. Technical Specifications
+## 10. Log Retention & Maintenance
+## 10. Log Retention & Maintenance
+- **Admin Logs**: Retained for **30 days** (older text log files are automatically pruned).
+- **Sign-In History & Records**: Retained for **60–90 days** in local storage and daily backups.
+- **Storage Consumption**: Extremely lightweight, consuming **less than 20 MB total**.
+
+### 10.1 FAQ: What happens if the Admin log save folder is not selected?
+If the Admin log save folder is not selected, **core sign-in functionality, database loading/saving, and local in-app history continue to operate normally**. The app simply skips writing external text log files and daily CSV/Excel export files to disk until a folder is designated in Admin settings.
+
+---
+
+## 11. Technical Specifications
 - **Framework**: Kotlin / Jetpack Compose.
 - **Versioning**: v4.0 - September 2026 Release.
 - **Storage**: Full JSON local persistence for all databases.

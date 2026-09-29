@@ -25,19 +25,14 @@ This guide explains how to use and maintain the Sign-In application.
 - **[Lists & Sorting]**
   - **Guest Sorting:** Guest visitors are always pinned to the **top** of both Role and Location sections.
   - **Live Mode (With Cast):** Visitors are listed on the left (with a separating bar between Role and Youth/Location entries), and Cast is on the right.
-  - **Dark Mode (No Cast):** When no cast list is loaded, visitors are dynamically split across Left and Right panels based on the median alphabetical letter of the uploaded Members database (e.g., A-J and K-Z), separated into Role and Location sections with a theme-colored bar.
+  - **Dark Mode (No Cast):** When no cast list is loaded, visitors are dynamically split across Left and Right panels based on the median alphabetical letter of the uploaded Members database (e.g., A-M and N-Z), displayed as `Members/Visitors (A-M)` and `Members/Visitors (N-Z)`.
 
 ---
 
 ## Admin Screen (Configuration)
 
 - **[Design & Appearance]**
-  - **Themes & Modes:** Choose from four modes working left to right:
-    1. **Theatre** (`#2BBCF2`)
-    2. **Rehearsals** (`#75FDB4`)
-    3. **Youth** (`#85EFC8`)
-    4. **Dark** (`#71A0F1`)
-  - **Color Selection Engine:** Tap any theme swatch to open the built-in RGB color sliders and pick any custom color. Text contrast automatically adapts (white on dark backgrounds, black on light backgrounds).
+  - **Theme & Color Customization:** Go to Admin > Appearance, tap **Click to change** on the right of the tile, and use the built-in RGB color sliders to choose any custom theme color. Text contrast automatically adapts (white on dark backgrounds, black on light backgrounds).
   - **Screen Saver:** Test the screen saver directly from the Appearance tile.
 
 - **[Data Management & Warehouse Mode]**
@@ -49,9 +44,13 @@ This guide explains how to use and maintain the Sign-In application.
   - **Warehouse Mode:** Toggle Warehouse mode in Admin to switch between Theatre worksheets and Warehouse worksheets (`GPT` / `YT` toggle button).
   - **Automated Reset:** If Row 2 of the Cast file has a date that has passed (evaluated at the scheduled Auto Signout Time, default 04:00), the app automatically resets the Cast list and title.
 
-- **[Automation & Auto-Start]**
+- **[Automation, Logs & Retention]**
   - **Daily Maintenance & Auto Signout:** Scheduled at your choice (default **04:00**) to sign out everyone, refresh databases, and save daily attendance logs into the `Records` subfolder.
-  - **Log Save Folder:** Displays the clean path (`Documents/Sign-In Data/Admin/`).
+  - **Log File Retention & Storage:** 
+    - **Admin Logs:** Retained for **30 days** (older files are pruned).
+    - **Sign-In History / Records:** Retained for **60–90 days**.
+    - **Storage Consumption:** Extremely lightweight, consuming **less than 20 MB total**.
+  - **Unselected Log Folder Behavior:** If no log save folder is selected, core sign-in, database loading/saving, and local in-app history operate normally; external text log files and daily export files are simply skipped until a folder is designated.
   - **Display Over Other Apps (Auto-Start):** Required for automatic startup over the lock screen. If grayed out on Android 11+, tap the top-right three dots (`⋮`) and select **"Allow restricted settings"** first.
   - **Tablet Auto-Restart & Battery Optimization Note:** On certain tablets (Samsung, Lenovo, etc.), OEM battery management may terminate apps launched automatically via boot receivers. To ensure the app stays running after reboot, go to **Settings > Apps > Sign-In v4.0 > Battery**, set it to **"Unrestricted"**, and enable **Auto-start / Allow background activity** in device care.
 

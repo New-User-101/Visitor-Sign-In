@@ -11,19 +11,20 @@ To ensure the app opens automatically when the tablet reboots, please complete t
 2. EXCEL DATA STRUCTURE (.xlsx)
 ------------------------------
 Sign-In v4.0 integrates with Excel spreadsheets stored in Documents/Sign-In Data/:
-  - Members / Cast list (Cols A & B)
+  - Members (Cols A & B)
   - Cast Sheet (Row 1 Title, Row 2 Date, Row 3+ Names)
   - Roles & Locations sheets
   - Questions & Titles sheets
 
 3. THEMES & CUSTOMIZATION
 -------------------------
-  - Custom Theme Color: Go to Admin > Appearance, tap the color swatch on the right, and use the RGB sliders in the custom color engine to pick any color.
+  - Custom Theme Color: Go to Admin > Appearance, tap "Click to change" on the right of the tile, and use the RGB sliders in the custom color engine to pick any custom color.
   - Dark Mode / Live Mode: Automatically transitions when no cast list is uploaded vs. when cast list is active.
   - Panel Headings: In Dark mode, panels display as "Members/Visitors (A-M)" and "Members/Visitors (N-Z)".
 
-4. SIGN-IN SAFEGUARDS & FEATURES
-------------------------------
+4. SIGN-IN SAFEGUARDS & LOG RETENTION
+-----------------------------------
   - Duplicate Sign-In Safeguard: Prevents checking in twice by displaying an "Already Signed In" warning and resetting the name input box.
   - Guest Validation: Enforces AA AAA format for guest check-ins.
   - Warehouse Mode: Optional toggle (GPT / YT) for dedicated warehouse worksheets.
+  - Log Retention & Unselected Folder Behavior: Admin logs are kept for 30 days, and sign-in records for 60–90 days (< 20 MB total). If no log save folder is selected, core sign-in and database persistence still work normally; external text log files and daily exports are simply skipped until a folder is selected.
